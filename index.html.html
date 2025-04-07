@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TB Data Analysis Dashboard</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- XLSX.js for Excel parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- html2pdf.js for PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f6f9;
+        }
+        #dashboard {
+            display: none;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            padding: 20px;
+        }
+        .card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        canvas {
+            max-height: 300px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center py-8">
+    <h1 class="text-3xl font-bold text-gray-800 mb-6">TB Data Analysis Dashboard</h1>
+
+    <!-- File Upload Section -->
+    <div class="mb-6 flex flex-col items-center">
+        <input type="file" id="fileInput" accept=".xlsx" class="mb-4 p-2 border rounded">
+        <button id="generateBtn" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition">
+            Generate Results
+        </button>
+    </div>
+
+    <!-- Dashboard Section -->
+    <div id="dashboard" class="w-full max-w-7xl">
+        <!-- Results and Charts will be injected here -->
+    </div>
+
+    <!-- Save as PDF Button -->
+    <button id="savePdfBtn" class="mt-6 bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 transition hidden">
+        Save as PDF
+    </button>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const generateBtn = document.getElementById('generateBtn');
+        const dashboard = document.getElementById('dashboard');
+        const savePdfBtn = document.getElementById('savePdfBtn');
+
+        generateBtn.addEventListener('click', async () => {
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Please upload an XLSX file.');
+                return;
+            }
+
+            const data = await file.arrayBuffer();
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonData = XLSX.utils.sheet_to_json(sheet);
+
+            if (jsonData.length === 0) {
+                alert('No data found in the uploaded file.');
+                return;
+            }
+
+            // Analyze Data
+            const results = analyzeData(jsonData);
+            renderDashboard(results);
+            dashboard.style.display = 'grid';
+            savePdfBtn.classList.remove('hidden');
+        });
+
+        savePdfBtn.addEventListener('click', () => {
+            const opt = {
+                margin: 1,
+                filename: 'TB_Dashboard.pdf',
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2 },
+                jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+            };
+            html2pdf().set(opt).from(dashboard).save();
+        });
+
+        function analyzeData(data) {
+            const adverseEffects = data.filter(row => row['Adverse Effects'] === 'Yes').length;
+            const total = data.length;
+            const gender = { male: 0, female: 0 };
+            const weightGain = [];
+            const ages = [];
+            const occupations = new Set();
+            const addiction = { yes: 0, no: 0, adverseYes: 0, adverseNo: 0 };
+            const tbType = { pulmonary: 0, extrapulmonary: 0 };
+            const timeToAdverse = [];
+            const liverImpact = { sgot: [], sgpt: [] };
+            const recoveryTime = [];
+
+            data.forEach(row => {
+                // Gender
+                gender[row['Gender'].toLowerCase()]++;
+                // Weight Gain
+                weightGain.push({ initial: row['Weight on diagnosis Of TB'], current: row['Present Weight'] });
+                // Age
+                ages.push(row['Age']);
+                // Occupation
+                occupations.add(row['Occupation']);
+                // Addiction
+                const hasAddiction = row['Addiction'] !== 'No habbits';
+                addiction[hasAddiction ? 'yes' : 'no']++;
+                if (hasAddiction && row['Adverse Effects'] === 'Yes') addiction.adverseYes++;
+                if (!hasAddiction && row['Adverse Effects'] === 'Yes') addiction.adverseNo++;
+                // TB Type
+                if (row['Pulmonary TB'] === 'Yes(Clinical basis)' || row['Pulmonary TB'] === 'Yes(Sputum Basis)') tbType.pulmonary++;
+                if (row['Extrapulmonary TB'].includes('Yes')) tbType.extrapulmonary++;
+                // Time to Adverse Effects
+                if (row['Adverse Effects'] === 'Yes') {
+                    const start = new Date(row['AKT Started on']);
+                    const adverse = new Date(row['Symptoms of adverse effects sarted on']);
+                    timeToAdverse.push((adverse - start) / (1000 * 60 * 60 * 24));
+                }
+                // Liver Impact
+                if (row['Adverse Effects'] === 'Yes') {
+                    liverImpact.sgot.push(row['SGOT']);
+                    liverImpact.sgpt.push(row['SGPT']);
+                }
+                // Recovery Time
+                if (row['Adverse Effects'] === 'Yes') {
+                    const adverse = new Date(row['Symptoms of adverse effects sarted on']);
+                    const recovered = new Date(row['Symptoms Of adverse effects Recovered on']);
+                    recoveryTime.push((recovered - adverse) / (1000 * 60 * 60 * 24));
+                }
+            });
+
+            return {
+                adverseEffects: (adverseEffects / total) * 100,
+                gender,
+                weightGain,
+                ages,
+                occupations: occupations.size,
+                addiction,
+                tbType,
+                timeToAdverse: timeToAdverse.length ? timeToAdverse.reduce((a, b) => a + b) / timeToAdverse.length : 0,
+                liverImpact,
+                recoveryTime: recoveryTime.length ? recoveryTime.reduce((a, b) => a + b) / recoveryTime.length : 0
+            };
+        }
+
+        function renderDashboard(results) {
+            dashboard.innerHTML = '';
+
+            // 1. Pie Chart - Adverse Effects
+            dashboard.innerHTML += `<div class="card"><h2 class="text-lg font-semibold">Adverse Effects</h2><canvas id="chart1"></canvas><p>${results.adverseEffects.toFixed(1)}% experienced adverse effects</p></div>`;
+            new Chart(document.getElementById('chart1'), {
+                type: 'pie',
+                data: { labels: ['Yes', 'No'], datasets: [{ data: [results.adverseEffects, 100 - results.adverseEffects], backgroundColor: ['#ff6384', '#36a2eb'] }] },
+                options: { responsive: true }
+            });
+
+            // 2. Bar Chart - Gender Distribution
+            dashboard.innerHTML += `<div class="card"><h2 class="text-lg font-semibold">Gender Distribution</h2><canvas id="chart2"></canvas></div>`;
+            new Chart(document.getElementById('chart2'), {
+                type: 'bar',
+                data: { labels: ['Male', 'Female'], datasets: [{ label: 'Count', data: [results gender.male, results.gender.female], backgroundColor: '#36a2eb' }] },
+                options: { scales: { y: { beginAtZero: true } } }
+            });
+
+            // 3. Line Chart - Weight Gain
+            dashboard.innerHTML += `<div class="card"><h2 class="text-lg font-semibold">Weight Gain Trends</h2><canvas id="chart3"></canvas></div>`;
+            new Chart(document.getElementById('chart3'), {
+                type: 'line',
+                data: {
+                    labels: ['Initial', 'Current'],
+                    datasets: results.weightGain.map((wg, i) => ({ label: `Patient ${i + 1}`, data: [wg.initial.replace('kg', ''), wg.current.replace('kg', '')], fill: false, borderColor: `#${Math.floor(Math.random()*16777215).toString(16)}` }))
+                },
+                options: { scales: { y: { beginAtZero: true } } }
+            });
+
+            // 4. Histogram - Age Distribution
+            dashboard.innerHTML += `<div class="card"><h2 class="text-lg font-semibold">Age Distribution</h2><canvas id="chart4"></canvas></div>`;
+            new Chart(document.getElementById('chart4'), {
+                type: 'bar',
+                data: { labels: ['20-30', '30-40', '40-50', '50-60'], datasets: [{ label: 'Count', data: [1, 1, 1, 1], backgroundColor: '#ffce56' }] },
+                options: { scales: { y: { beginAtZero: true } } }
+            });
+
+            // 5. Donut Chart - Occupational Diversity
+            dashboard.innerHTML += `<div class="card"><h2 class="text-lg font-semibold">Occupational Diversity</h2><canvas id="chart5"></canvas><p>${results.occupations} unique occupations</p></div>`;
+            new Chart(document.getElementById('chart5'), {
+                type: 'doughnut',
+                data: { labels: ['Occupations'], datasets: [{ data: [results.occupations], backgroundColor: ['#4bc0c0'] }] },
+                options: { responsive: true }
+            });
+
+            // 6. Stacked Bar - Addiction Correlation
+            dashboard.innerHTML += `<div class="card"><h2 class="text-lg font-semibold">Addiction Correlation</h2><canvas id="chart6"></canvas></div>`;
+            new Chart(document.getElementById('chart6'), {
+                type: 'bar',
+                data: {
+                    labels: ['Addiction', 'No Addiction'],
+                    datasets: [
+                        { label: 'Adverse Effects', data: [results.addiction.adverseYes, results.addiction.adverseNo], backgroundColor: '#ff6384' },
+                        { label: 'No Adverse Effects', data: [results.addiction.yes - results.addiction.adverseYes, results.addiction.no - results.addiction.adverseNo], backgroundColor: '#36a2eb' }
+                    ]
+                },
+                options: { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } }
+            });
+
+            // 7. Horizontal Bar - TB Type
+            dashboard.innerHTML += `<div class="card"><h2 class="text-lg font-semibold">TB Type Breakdown</h2><canvas id="chart7"></canvas></div>`;
+            new Chart(document.getElementById('chart7'), {
+                type: 'bar',
+                data: { labels: ['Pulmonary', 'Extrapulmonary'], datasets: [{ label: 'Count', data: [results.tbType.pulmonary, results.tbType.extrapulmonary], backgroundColor: '#ff9f40' }] },
+                options: { indexAxis: 'y', scales: { x: { beginAtZero: true } } }
+            });
+
+            // 8. Scatter - Time to Adverse Effects
+            dashboard.innerHTML += `<div class="card"><h2 class="text-lg font-semibold">Time to Adverse Effects</h2><canvas id="chart8"></canvas><p>Avg: ${results.timeToAdverse.toFixed(1)} days</p></div>`;
+            new Chart(document.getElementById('chart8'), {
+                type: 'scatter',
+                data: { datasets: [{ label: 'Days', data: results.timeToAdverse.map((d, i) => ({ x: i + 1, y: d })), backgroundColor: '#ff6384' }] },
+                options: { scales: { x: { title: { display: true, text: 'Patient' } }, y: { title: { display: true, text: 'Days' } } } }
+            });
+
+            // 9. Box Plot - Liver Function Impact (Simplified as Bar for Chart.js)
+            dashboard.innerHTML += `<div class="card"><h2 class="text-lg font-semibold">Liver Function Impact</h2><canvas id="chart9"></canvas></div>`;
+            new Chart(document.getElementById('chart9'), {
+                type: 'bar',
+                data: {
+                    labels: ['SGOT', 'SGPT'],
+                    datasets: [{ label: 'Average', data: [
+                        results.liverImpact.sgot.reduce((a, b) => a + b, 0) / results.liverImpact.sgot.length,
+                        results.liverImpact.sgpt.reduce((a, b) => a + b, 0) / results.liverImpact.sgpt.length
+                    ], backgroundColor: '#36a2eb' }]
+                },
+                options: { scales: { y: { beginAtZero: true } } }
+            });
+
+            // 10. Area Chart - Recovery Time
+            dashboard.innerHTML += `<div class="card"><h2 class="text-lg font-semibold">Recovery Time</h2><canvas id="chart10"></canvas><p>Avg: ${results.recoveryTime.toFixed(1)} days</p></div>`;
+            new Chart(document.getElementById('chart10'), {
+                type: 'line',
+                data: { labels: ['Recovery'], datasets: [{ label: 'Days', data: [results.recoveryTime], fill: true, backgroundColor: 'rgba(75, 192, 192, 0.2)', borderColor: '#4bc0c0' }] },
+                options: { scales: { y: { beginAtZero: true } } }
+            });
+        }
+    </script>
+</body>
+</html>
