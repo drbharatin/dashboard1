@@ -47,7 +47,7 @@
             loader.style.display = 'block';
             dashboard.style.display = 'none';
             savePdfBtn.classList.add('hidden');
-            dashboard.innerHTML = ''; // Clear previous content
+            dashboard.innerHTML = '';
 
             try {
                 const data = await file.arrayBuffer();
@@ -61,8 +61,8 @@
                     throw new Error('No data found in the uploaded file.');
                 }
 
-                // Validate required columns
-                const requiredColumns = ['Adverse Effects', 'Gender', 'Weight on diagnosis Of TB', 'Present Weight', 'Age', 'Occupation', 'Addiction', 'Pulmonary TB', 'Extrapulmonary TB', 'AKT Started on', 'Symptoms of adverse effects sarted on', 'Symptoms Of adverse effects Recovered on', 'SGOT', 'SGPT'];
+                // Validate required columns based on top-level headers
+                const requiredColumns = ['Adverse Effects', 'Gender', 'Weight on diagnosis Of TB', 'Present Weight', 'Age', 'Occupation', 'Addiction', 'Investigations', 'TB Type', 'AKT Started on', 'Symptoms of adverse effects sarted on', 'Symptoms Of adverse effects Recovered on'];
                 const missingColumns = requiredColumns.filter(col => !jsonData[0].hasOwnProperty(col));
                 if (missingColumns.length > 0) {
                     throw new Error(`Missing required columns: ${missingColumns.join(', ')}. Please ensure the file matches the sample format.`);
@@ -111,8 +111,8 @@
                 else if (genderVal === 'female') gender.female++;
 
                 // Weight Gain
-                const initialWeight = parseFloat(row['Weight on diagnosis Of TB']) || 0;
-                const currentWeight = parseFloat(row['Present Weight']) || 0;
+                const initialWeight = parseFloat((row['Weight on diagnosis Of TB'] || '').replace('kg', '')) || 0;
+                const currentWeight = parseFloat((row['Present Weight'] || '').replace('kg', '')) || 0;
                 weightGain.push({ initial: initialWeight, current: currentWeight });
 
                 // Age
@@ -127,11 +127,11 @@
                 if (hasAddiction && row['Adverse Effects'] === 'Yes') addiction.adverseYes++;
                 if (!hasAddiction && row['Adverse Effects'] === 'Yes') addiction.adverseNo++;
 
-                // TB Type
-                const pulmonaryVal = row['Pulmonary TB'] || '';
-                const extrapulmonaryVal = row['Extrapulmonary TB'] || '';
-                if (typeof pulmonaryVal === 'string' && pulmonaryVal.includes('Yes')) tbType.pulmonary++;
-                if (typeof extrapulmonaryVal === 'string' && extrapulmonaryVal.includes('Yes')) tbType.extrapulmonary++;
+                // TB Type (parse from Investigations or TB Type column)
+                const investigations = row['Investigations'] || '';
+                const tbTypeVal = row['TB Type'] || '';
+                if (typeof investigations === 'string' && investigations.includes('Yes(Clinical basis)') || typeof tbTypeVal === 'string' && tbTypeVal.includes('Yes(Sputum Basis)')) tbType.pulmonary++;
+                if (typeof investigations === 'string' && investigations.includes('Yes(Cervical LN-MTB detected)') || typeof tbTypeVal === 'string' && tbTypeVal.includes('Yes(CSF-CBNAAT-MTB detected)')) tbType.extrapulmonary++;
 
                 // Time to Adverse Effects
                 if (row['Adverse Effects'] === 'Yes' && row['AKT Started on'] && row['Symptoms of adverse effects sarted on']) {
@@ -142,10 +142,13 @@
                     }
                 }
 
-                // Liver Impact
+                // Liver Impact (parse from Investigations)
                 if (row['Adverse Effects'] === 'Yes') {
-                    liverImpact.sgot.push(parseFloat(row['SGOT']) || 0);
-                    liverImpact.sgpt.push(parseFloat(row['SGPT']) || 0);
+                    const invData = (row['Investigations'] || '').split(/\s+/); // Split by whitespace to extract SGOT and SGPT
+                    const sgotIndex = invData.indexOf('SGOT');
+                    const sgptIndex = invData.indexOf('SGPT');
+                    liverImpact.sgot.push(sgotIndex > -1 && sgptIndex > -1 ? parseFloat(invData[sgotIndex + 1]) || 0 : 0);
+                    liverImpact.sgpt.push(sgptIndex > -1 ? parseFloat(invData[sgptIndex + 1]) || 0 : 0);
                 }
 
                 // Recovery Time
