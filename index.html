@@ -61,7 +61,6 @@
                     throw new Error('No data found in the uploaded file.');
                 }
 
-                // Validate required columns based on top-level headers
                 const requiredColumns = ['Adverse Effects', 'Gender', 'Weight on diagnosis Of TB', 'Present Weight', 'Age', 'Occupation', 'Addiction', 'Investigations', 'TB Type', 'AKT Started on', 'Symptoms of adverse effects sarted on', 'Symptoms Of adverse effects Recovered on'];
                 const missingColumns = requiredColumns.filter(col => !jsonData[0].hasOwnProperty(col));
                 if (missingColumns.length > 0) {
@@ -127,35 +126,37 @@
                 if (hasAddiction && row['Adverse Effects'] === 'Yes') addiction.adverseYes++;
                 if (!hasAddiction && row['Adverse Effects'] === 'Yes') addiction.adverseNo++;
 
-                // TB Type (parse from Investigations or TB Type column)
+                // TB Type
                 const investigations = row['Investigations'] || '';
                 const tbTypeVal = row['TB Type'] || '';
-                if (typeof investigations === 'string' && investigations.includes('Yes(Clinical basis)') || typeof tbTypeVal === 'string' && tbTypeVal.includes('Yes(Sputum Basis)')) tbType.pulmonary++;
-                if (typeof investigations === 'string' && investigations.includes('Yes(Cervical LN-MTB detected)') || typeof tbTypeVal === 'string' && tbTypeVal.includes('Yes(CSF-CBNAAT-MTB detected)')) tbType.extrapulmonary++;
+                if ((typeof investigations === 'string' && investigations.includes('Yes(Clinical basis)') || investigations.includes('Yes(Sputum Basis)')) ||
+                    (typeof tbTypeVal === 'string' && tbTypeVal.includes('Yes'))) tbType.pulmonary++;
+                if (typeof investigations === 'string' && (investigations.includes('Yes(Cervical LN-MTB detected)') || investigations.includes('Yes(CSF-CBNAAT-MTB detected)')) ||
+                    (typeof tbTypeVal === 'string' && tbTypeVal.includes('Yes'))) tbType.extrapulmonary++;
 
                 // Time to Adverse Effects
                 if (row['Adverse Effects'] === 'Yes' && row['AKT Started on'] && row['Symptoms of adverse effects sarted on']) {
                     const start = new Date(row['AKT Started on']);
                     const adverse = new Date(row['Symptoms of adverse effects sarted on']);
-                    if (!isNaN(start) && !isNaN(adverse)) {
+                    if (!isNaN(start.getTime()) && !isNaN(adverse.getTime())) {
                         timeToAdverse.push((adverse - start) / (1000 * 60 * 60 * 24));
                     }
                 }
 
-                // Liver Impact (parse from Investigations)
+                // Liver Impact
                 if (row['Adverse Effects'] === 'Yes') {
-                    const invData = (row['Investigations'] || '').split(/\s+/); // Split by whitespace to extract SGOT and SGPT
+                    const invData = (row['Investigations'] || '').split(/\s+/);
                     const sgotIndex = invData.indexOf('SGOT');
                     const sgptIndex = invData.indexOf('SGPT');
-                    liverImpact.sgot.push(sgotIndex > -1 && sgptIndex > -1 ? parseFloat(invData[sgotIndex + 1]) || 0 : 0);
-                    liverImpact.sgpt.push(sgptIndex > -1 ? parseFloat(invData[sgptIndex + 1]) || 0 : 0);
+                    liverImpact.sgot.push(sgotIndex > -1 && sgotIndex + 1 < invData.length ? parseFloat(invData[sgotIndex + 1]) || 0 : 0);
+                    liverImpact.sgpt.push(sgptIndex > -1 && sgptIndex + 1 < invData.length ? parseFloat(invData[sgptIndex + 1]) || 0 : 0);
                 }
 
                 // Recovery Time
                 if (row['Adverse Effects'] === 'Yes' && row['Symptoms of adverse effects sarted on'] && row['Symptoms Of adverse effects Recovered on']) {
                     const adverse = new Date(row['Symptoms of adverse effects sarted on']);
                     const recovered = new Date(row['Symptoms Of adverse effects Recovered on']);
-                    if (!isNaN(adverse) && !isNaN(recovered)) {
+                    if (!isNaN(adverse.getTime()) && !isNaN(recovered.getTime())) {
                         recoveryTime.push((recovered - adverse) / (1000 * 60 * 60 * 24));
                     }
                 }
@@ -169,9 +170,9 @@
                 occupations: occupations.size,
                 addiction,
                 tbType,
-                timeToAdverse: timeToAdverse.length ? timeToAdverse.reduce((a, b) => a + b) / timeToAdverse.length : 0,
+                timeToAdverse: timeToAdverse.length ? timeToAdverse : [0], // Ensure it's an array
                 liverImpact,
-                recoveryTime: recoveryTime.length ? recoveryTime.reduce((a, b) => a + b) / recoveryTime.length : 0
+                recoveryTime: recoveryTime.length ? recoveryTime : [0] // Ensure it's an array
             };
         }
 
@@ -256,7 +257,7 @@
             });
 
             // 8. Scatter - Time to Adverse Effects
-            dashboard.innerHTML += `<div class="card"><h2 class="text-lg font-semibold">Time to Adverse Effects</h2><canvas id="chart8"></canvas><p>Avg: ${results.timeToAdverse.toFixed(1)} days</p></div>`;
+            dashboard.innerHTML += `<div class="card"><h2 class="text-lg font-semibold">Time to Adverse Effects</h2><canvas id="chart8"></canvas><p>Avg: ${(results.timeToAdverse.length > 0 ? results.timeToAdverse.reduce((a, b) => a + b) / results.timeToAdverse.length : 0).toFixed(1)} days</p></div>`;
             new Chart(document.getElementById('chart8'), {
                 type: 'scatter',
                 data: { datasets: [{ label: 'Days', data: results.timeToAdverse.map((d, i) => ({ x: i + 1, y: d })), backgroundColor: '#ff6384' }] },
@@ -282,10 +283,10 @@
             });
 
             // 10. Area Chart - Recovery Time
-            dashboard.innerHTML += `<div class="card"><h2 class="text-lg font-semibold">Recovery Time</h2><canvas id="chart10"></canvas><p>Avg: ${results.recoveryTime.toFixed(1)} days</p></div>`;
+            dashboard.innerHTML += `<div class="card"><h2 class="text-lg font-semibold">Recovery Time</h2><canvas id="chart10"></canvas><p>Avg: ${(results.recoveryTime.length > 0 ? results.recoveryTime.reduce((a, b) => a + b) / results.recoveryTime.length : 0).toFixed(1)} days</p></div>`;
             new Chart(document.getElementById('chart10'), {
                 type: 'line',
-                data: { labels: ['Recovery'], datasets: [{ label: 'Days', data: [results.recoveryTime], fill: true, backgroundColor: 'rgba(75, 192, 192, 0.2)', borderColor: '#4bc0c0' }] },
+                data: { labels: ['Recovery'], datasets: [{ label: 'Days', data: [results.recoveryTime.length > 0 ? results.recoveryTime.reduce((a, b) => a + b) / results.recoveryTime.length : 0], fill: true, backgroundColor: 'rgba(75, 192, 192, 0.2)', borderColor: '#4bc0c0' }] },
                 options: { scales: { y: { beginAtZero: true } } }
             });
         }
