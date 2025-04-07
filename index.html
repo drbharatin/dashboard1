@@ -68,6 +68,7 @@
                 }
 
                 const results = analyzeData(jsonData);
+                console.log('Analysis Results:', results); // Debug: Check results
                 renderDashboard(results);
                 dashboard.style.display = 'grid';
                 savePdfBtn.classList.remove('hidden');
@@ -129,7 +130,7 @@
                 // TB Type
                 const investigations = row['Investigations'] || '';
                 const tbTypeVal = row['TB Type'] || '';
-                if ((typeof investigations === 'string' && investigations.includes('Yes(Clinical basis)') || investigations.includes('Yes(Sputum Basis)')) ||
+                if ((typeof investigations === 'string' && (investigations.includes('Yes(Clinical basis)') || investigations.includes('Yes(Sputum Basis)'))) ||
                     (typeof tbTypeVal === 'string' && tbTypeVal.includes('Yes'))) tbType.pulmonary++;
                 if (typeof investigations === 'string' && (investigations.includes('Yes(Cervical LN-MTB detected)') || investigations.includes('Yes(CSF-CBNAAT-MTB detected)')) ||
                     (typeof tbTypeVal === 'string' && tbTypeVal.includes('Yes'))) tbType.extrapulmonary++;
@@ -170,13 +171,14 @@
                 occupations: occupations.size,
                 addiction,
                 tbType,
-                timeToAdverse: timeToAdverse.length ? timeToAdverse : [0], // Ensure it's an array
+                timeToAdverse: timeToAdverse.length ? timeToAdverse : [0],
                 liverImpact,
-                recoveryTime: recoveryTime.length ? recoveryTime : [0] // Ensure it's an array
+                recoveryTime: recoveryTime.length ? recoveryTime : [0]
             };
         }
 
         function renderDashboard(results) {
+            console.log('Rendering Dashboard with Results:', results); // Debug: Check results before rendering
             dashboard.innerHTML = '';
 
             // 1. Pie Chart - Adverse Effects
